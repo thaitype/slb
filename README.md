@@ -1,70 +1,98 @@
-# minimal-typescript-node-esm-starter
+# SLB - Serverless Load Balancer
 
-Welcome to the minimal TypeScript ESM (ECMAScript Modules) starter repository! This project provides a streamlined setup for building TypeScript projects with ECMAScript modules support.
+A serverless load balancer for low budget infrastructure. Built on Cloudflare Workers, SLB provides cost-effective load balancing without managing servers or paying fixed costs.
 
-## Feature
-- Minimal setup with few config for TypeScript
-- Run typescript without compile using [tsx](https://github.com/privatenumber/tsx)
-- Zero-config test runner with [vitest](https://vitest.dev)
-- [Test Coverage by v8](https://vitest.dev/guide/coverage.html)
-- Bundling based on [tsup](https://github.com/egoist/tsup) which based on [esbuild](https://esbuild.github.io/)
-- Lint `eslint` & Type-check
-- Format with `Prettier`
-
-## Getting Started
-Clone this repository to kickstart your project:
-
-```bash
-git clone https://github.com/thaitype/minimal-typescript-node-esm-starter.git [project_name]
-```
+## Features
+- **Serverless architecture** - No servers to manage, scales automatically
+- **Cost-effective** - Pay per request, no fixed infrastructure costs
+- **Stateless load balancing** - Random origin selection per request
+- **Automatic failover** - Retry failed requests on healthy origins
+- **Configurable timeouts** - Set request timeouts and retry limits
+- **Health diagnostics** - Built-in health check and configuration endpoint
+- **Easy testing** - Mock origin servers for local development
 
 ## Installation
-Install dependencies using your preferred package manager:
 
-```
+```bash
 pnpm install
 ```
 
-You can also use `npm` or `yarn` if you prefer.
+## Configuration
 
-## Usage
+Configure SLB using environment variables:
 
-Explore the provided scripts to enhance your development experience:
+- `ORIGINS` - Comma-separated list of backend servers (required)
+- `ORIGIN_TIMEOUT_MS` - Request timeout in milliseconds (default: 8000)
+- `RETRIES` - Number of retry attempts (default: 1)
+- `FAIL_STATUSES` - HTTP status codes to treat as failures (default: 500,504,521,522,523)
+- `LB_DIAG_PATH` - Health check endpoint path (default: /__lb/health)
+
+Example `.dev.vars` for local development:
+```
+ORIGINS=http://localhost:9001,http://localhost:9002
+ORIGIN_TIMEOUT_MS=3000
+RETRIES=1
+```
+
+## Development
 
 ```bash
-# Start the code
-pnpm start
+# Start mock origin servers for testing
+pnpm mock:servers
 
-# Start the code with watch mode
+# Start local development server
 pnpm dev
 
-# Test the code with watch mode
+# Run tests
 pnpm test
 
-# Test the code for CI (Run single time)
-pnpm test:ci
-
-# Test the code with coverage report
+# Run tests with coverage
 pnpm test:coverage
 
-# Build the project
-pnpm build
-
-# Type check with TypeScript & eslint
+# Lint and format code
 pnpm lint
-
-# Auto fix lint
-pnpm lint:fix
-
-# Format with Prettier
 pnpm format
 ```
 
-## Other runner option 
-- If you still want to use [ava](https://github.com/avajs/ava), please check out branch [with-ava-test](https://github.com/thaitype/minimal-typescript-node-esm-starter/tree/with-ava-test)
+## Testing
 
-## Additional TypeScript Compiler Options
+1. Start mock origin servers:
+   ```bash
+   pnpm mock:servers
+   ```
 
-Explore more TypeScript compiler options by referring to the [tsconfig cheatsheet](https://www.totaltypescript.com/tsconfig-cheat-sheet) created by Matt Pocock.
+2. In another terminal, start the load balancer:
+   ```bash
+   pnpm dev
+   ```
 
-Feel free to customize and extend this starter kit based on your project requirements. Happy coding!
+3. Test the load balancer:
+   ```bash
+   # Test load balancing
+   curl http://localhost:8787/api/test
+   
+   # Check health and configuration
+   curl http://localhost:8787/__lb/health
+   ```
+
+## API Endpoints
+
+- `GET /__lb/health` - Returns health status and configuration
+- `*` - All other requests are proxied to configured origins with load balancing
+
+## Deployment
+
+Deploy to Cloudflare Workers:
+
+```bash
+# Deploy to production
+pnpm wrangler:deploy
+
+# Set environment variables
+wrangler vars set ORIGINS "https://api1.example.com,https://api2.example.com"
+wrangler vars set ORIGIN_TIMEOUT_MS "5000"
+```
+
+## License
+
+MIT
