@@ -144,16 +144,15 @@ class LoadBalancer {
       const response = await this.tryOrigin(origin, request);
       
       if (response) {
-        const newResponse = new Response(response.body, {
+        const newHeaders = new Headers(response.headers);
+        newHeaders.set('X-LB-Origin', origin);
+        newHeaders.set('X-LB-Attempt', (attempt + 1).toString());
+        
+        return new Response(response.body, {
           status: response.status,
           statusText: response.statusText,
-          headers: response.headers
+          headers: newHeaders
         });
-        
-        newResponse.headers.set('X-LB-Origin', origin);
-        newResponse.headers.set('X-LB-Attempt', (attempt + 1).toString());
-        
-        return newResponse;
       }
     }
 

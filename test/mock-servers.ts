@@ -89,6 +89,6 @@ export async function stopMockServers(servers: MockServer[]): Promise<void> {
 
 // Default configuration for testing
 export const defaultMockConfig: MockServerOptions[] = [
-  { port: 9001, delay: 100 },
-  { port: 9002, delay: 150 }
+  { port: 9001, delay: 0 },
+  { port: 9002, delay: 0 }
 ];

@@ -25,6 +25,7 @@
     "mock:servers": "tsx test/run-mock-servers.ts",
     "wrangler:dev": "wrangler dev",
     "wrangler:deploy": "wrangler deploy",
+    "benchmark": "tsx test/benchmark.ts",
     "e2e:test": "concurrently \"pnpm mock:servers\" \"sleep 2 && pnpm wrangler:dev\" --kill-others-on-fail"
   },
   "devDependencies": {
