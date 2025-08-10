@@ -20,6 +20,11 @@ class LoadBalancer {
     this.config = this.parseConfig(env);
   }
 
+  private log(path: string, message: string, level: 'info' | 'error' = 'info'): void {
+    const timestamp = new Date().toISOString();
+    console.log(`[${timestamp}] [${level.toUpperCase()}] ${path} - ${message}`);
+  }
+
   private parseConfig(env: any): LoadBalancerConfig {
     const origins = this.parseOrigins(env.ORIGINS);
     if (origins.length === 0) {
@@ -126,8 +131,12 @@ class LoadBalancer {
   }
 
   private isOriginAllowed(origin: string): boolean {
-    if (!this.config.corsEnabled) return false;
-    if (this.config.corsAllowOrigins.includes('*')) return true;
+    if (!this.config.corsEnabled) {
+      return false;
+    }
+    if (this.config.corsAllowOrigins.includes('*')) {
+      return true;
+    }
     return this.config.corsAllowOrigins.includes(origin);
   }
 
@@ -239,13 +248,11 @@ class LoadBalancer {
       const response = await this.fetchWithTimeout(targetUrl, request);
       
       if (this.config.failStatuses.has(response.status)) {
-        console.log(`Origin ${origin} returned fail status: ${response.status}`);
         return null;
       }
       
       return response;
     } catch (error) {
-      console.log(`Origin ${origin} failed:`, error);
       return null;
     }
   }
@@ -256,13 +263,12 @@ class LoadBalancer {
       version: '1.0.0-mvp',
       timestamp: new Date().toISOString(),
       config: {
-        origins: this.config.origins,
+        originCount: this.config.origins.length,
         originTimeoutMs: this.config.originTimeoutMs,
         retries: this.config.retries,
         failStatuses: Array.from(this.config.failStatuses).sort(),
         diagPath: this.config.diagPath,
         corsEnabled: this.config.corsEnabled,
-        corsAllowOrigins: this.config.corsAllowOrigins,
         corsAllowMethods: this.config.corsAllowMethods,
         corsAllowHeaders: this.config.corsAllowHeaders,
         corsExposeHeaders: this.config.corsExposeHeaders,
@@ -288,23 +294,33 @@ class LoadBalancer {
     const url = new URL(request.url);
     const requestOrigin = request.headers.get('Origin') || '';
     
+    this.log(url.pathname, `${request.method} request from origin: ${requestOrigin || 'none'}`);
+    
     if (url.pathname === this.config.diagPath) {
+      this.log(url.pathname, 'Serving diagnostic response');
       return this.buildDiagnosticResponse(requestOrigin);
     }
 
     // Handle CORS preflight requests
     if (this.config.corsEnabled && this.isPreflightRequest(request)) {
+      const allowed = this.isOriginAllowed(requestOrigin);
+      this.log(url.pathname, `CORS preflight request - origin ${requestOrigin} ${allowed ? 'allowed' : 'denied'}`);
       return this.handlePreflightRequest(request);
     }
 
     const shuffledOrigins = this.shuffleArray(this.config.origins);
     const maxAttempts = Math.min(this.config.retries + 1, shuffledOrigins.length);
+    
+    this.log(url.pathname, `Load balancing: ${maxAttempts} attempts across ${shuffledOrigins.length} origins`);
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       const origin = shuffledOrigins[attempt];
+      this.log(url.pathname, `Attempt ${attempt + 1}/${maxAttempts}: Trying origin ${origin}`);
       const response = await this.tryOrigin(origin, request);
       
       if (response) {
+        this.log(url.pathname, `Success: Origin ${origin} responded with status ${response.status} on attempt ${attempt + 1}`);
+        
         const newHeaders = new Headers(response.headers);
         newHeaders.set('X-LB-Origin', origin);
         newHeaders.set('X-LB-Attempt', (attempt + 1).toString());
@@ -320,8 +336,11 @@ class LoadBalancer {
         
         return newResponse;
       }
+      this.log(url.pathname, `Failed: Origin ${origin} failed on attempt ${attempt + 1}`, 'error');
     }
 
+    this.log(url.pathname, `All origins exhausted: ${maxAttempts} attempts failed, returning 502`, 'error');
+    
     return new Response(
       JSON.stringify({
         error: 'All origins failed',

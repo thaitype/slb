@@ -61,13 +61,13 @@ describe('Load Balancer Worker', () => {
       const diagnostics = await response.json();
       
       expect(response.status).toBe(200);
-      expect(diagnostics.config.origins).toEqual([
-        'http://localhost:9001',
-        'http://localhost:9002'
-      ]);
+      expect(diagnostics.config.originCount).toBe(2);
       expect(diagnostics.config.originTimeoutMs).toBe(3000);
       expect(diagnostics.config.retries).toBe(1);
       expect(diagnostics.config.failStatuses).toEqual([500, 502, 503]);
+      
+      // Verify sensitive origins data is not exposed
+      expect(diagnostics.config.origins).toBeUndefined();
     });
 
     it('should handle missing ORIGINS and return error', async () => {
@@ -202,19 +202,26 @@ describe('Load Balancer Worker', () => {
 
   describe('CORS Handling', () => {
     describe('Configuration', () => {
-      it('should include CORS configuration in diagnostics when enabled', async () => {
+      it('should include safe CORS configuration in diagnostics when enabled', async () => {
         const request = new Request('http://localhost/__lb/health');
         
         const response = await worker.fetch(request, mockEnvWithCors);
         const diagnostics = await response.json();
         
+        // Verify CORS configuration is included (but not sensitive allowlist)
         expect(diagnostics.config.corsEnabled).toBe(true);
-        expect(diagnostics.config.corsAllowOrigins).toEqual(['https://example.com', 'https://app.example.com']);
         expect(diagnostics.config.corsAllowMethods).toEqual(['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']);
         expect(diagnostics.config.corsAllowHeaders).toEqual(['Content-Type', 'Authorization', 'X-Custom-Header']);
         expect(diagnostics.config.corsExposeHeaders).toEqual(['X-Total-Count']);
         expect(diagnostics.config.corsAllowCredentials).toBe(false);
         expect(diagnostics.config.corsMaxAgeSec).toBe(3600);
+        
+        // Verify sensitive data is not exposed
+        expect(diagnostics.config.corsAllowOrigins).toBeUndefined();
+        expect(diagnostics.config.origins).toBeUndefined();
+        
+        // Verify we get origin count instead
+        expect(diagnostics.config.originCount).toBe(2);
       });
     });
 
