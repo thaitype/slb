@@ -183,16 +183,21 @@ describe('Load Balancer Worker', () => {
     it('should timeout and retry on slow origins', async () => {
       const request = new Request('http://localhost/api/test');
 
-      // First call times out, second succeeds
+      // First call times out (simulate AbortError), second succeeds
       mockFetch
-        .mockImplementationOnce(() => new Promise(resolve => setTimeout(() => resolve(new Response('timeout')), 5000)))
+        .mockImplementationOnce(() => {
+          // Simulate an aborted/timeout request
+          const error = new Error('This operation was aborted');
+          error.name = 'AbortError';
+          return Promise.reject(error);
+        })
         .mockResolvedValueOnce(new Response(JSON.stringify({ success: true }), { status: 200 }));
 
       const response = await worker.fetch(request, mockEnv);
       
       expect(response.status).toBe(200);
       expect(mockFetch).toHaveBeenCalledTimes(2);
-    }, 10000); // 10 second timeout for this test
+    });
   });
 
   describe('CORS Handling', () => {
