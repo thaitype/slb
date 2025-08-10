@@ -4,6 +4,13 @@ interface LoadBalancerConfig {
   retries: number;
   failStatuses: Set<number>;
   diagPath: string;
+  corsEnabled: boolean;
+  corsAllowOrigins: string[];
+  corsAllowMethods: string[];
+  corsAllowHeaders: string[];
+  corsExposeHeaders?: string[];
+  corsAllowCredentials: boolean;
+  corsMaxAgeSec: number;
 }
 
 class LoadBalancer {
@@ -24,12 +31,27 @@ class LoadBalancer {
     const failStatuses = this.parseFailStatuses(env.FAIL_STATUSES);
     const diagPath = env.LB_DIAG_PATH || '/__lb/health';
 
+    const corsEnabled = this.parseCorsEnabled(env.CORS_ENABLED);
+    const corsAllowOrigins = this.parseCorsAllowOrigins(env.CORS_ALLOW_ORIGINS);
+    const corsAllowMethods = this.parseCorsAllowMethods(env.CORS_ALLOW_METHODS);
+    const corsAllowHeaders = this.parseCorsAllowHeaders(env.CORS_ALLOW_HEADERS);
+    const corsExposeHeaders = this.parseCorsExposeHeaders(env.CORS_EXPOSE_HEADERS);
+    const corsAllowCredentials = this.parseCorsAllowCredentials(env.CORS_ALLOW_CREDENTIALS);
+    const corsMaxAgeSec = this.parseCorsMaxAgeSec(env.CORS_MAX_AGE_SEC);
+
     return {
       origins,
       originTimeoutMs,
       retries,
       failStatuses,
-      diagPath
+      diagPath,
+      corsEnabled,
+      corsAllowOrigins,
+      corsAllowMethods,
+      corsAllowHeaders,
+      corsExposeHeaders,
+      corsAllowCredentials,
+      corsMaxAgeSec
     };
   }
 
@@ -59,6 +81,125 @@ class LoadBalancer {
       .filter(status => !isNaN(status));
     
     return new Set(statuses.length > 0 ? statuses : defaultFailStatuses);
+  }
+
+  private parseCorsEnabled(corsEnabledStr: string): boolean {
+    return corsEnabledStr?.toLowerCase() === 'true';
+  }
+
+  private parseCorsAllowOrigins(corsAllowOriginsStr: string): string[] {
+    if (!corsAllowOriginsStr) return [];
+    if (corsAllowOriginsStr.trim() === '*') return ['*'];
+    return corsAllowOriginsStr.split(',').map(origin => origin.trim()).filter(origin => origin.length > 0);
+  }
+
+  private parseCorsAllowMethods(corsAllowMethodsStr: string): string[] {
+    const defaultMethods = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'];
+    if (!corsAllowMethodsStr) return defaultMethods;
+    return corsAllowMethodsStr.split(',').map(method => method.trim().toUpperCase()).filter(method => method.length > 0);
+  }
+
+  private parseCorsAllowHeaders(corsAllowHeadersStr: string): string[] {
+    const defaultHeaders = ['Content-Type', 'Authorization'];
+    if (!corsAllowHeadersStr) return defaultHeaders;
+    return corsAllowHeadersStr.split(',').map(header => header.trim()).filter(header => header.length > 0);
+  }
+
+  private parseCorsExposeHeaders(corsExposeHeadersStr: string): string[] | undefined {
+    if (!corsExposeHeadersStr) return undefined;
+    return corsExposeHeadersStr.split(',').map(header => header.trim()).filter(header => header.length > 0);
+  }
+
+  private parseCorsAllowCredentials(corsAllowCredentialsStr: string): boolean {
+    return corsAllowCredentialsStr?.toLowerCase() === 'true';
+  }
+
+  private parseCorsMaxAgeSec(corsMaxAgeSecStr: string): number {
+    const maxAge = parseInt(corsMaxAgeSecStr || '600', 10);
+    return Math.max(0, maxAge);
+  }
+
+  private isPreflightRequest(request: Request): boolean {
+    return request.method === 'OPTIONS' &&
+           request.headers.has('Origin') &&
+           request.headers.has('Access-Control-Request-Method');
+  }
+
+  private isOriginAllowed(origin: string): boolean {
+    if (!this.config.corsEnabled) return false;
+    if (this.config.corsAllowOrigins.includes('*')) return true;
+    return this.config.corsAllowOrigins.includes(origin);
+  }
+
+  private getCorsAllowOriginHeader(requestOrigin: string): string {
+    if (!this.isOriginAllowed(requestOrigin)) return '';
+    
+    // If credentials are allowed and we have wildcard, echo the specific origin
+    if (this.config.corsAllowCredentials && this.config.corsAllowOrigins.includes('*')) {
+      return requestOrigin;
+    }
+    
+    // If wildcard is allowed and no credentials, use wildcard
+    if (this.config.corsAllowOrigins.includes('*')) {
+      return '*';
+    }
+    
+    // Otherwise, echo the specific origin
+    return requestOrigin;
+  }
+
+  private handlePreflightRequest(request: Request): Response {
+    const origin = request.headers.get('Origin') || '';
+    
+    if (!this.isOriginAllowed(origin)) {
+      return new Response(
+        JSON.stringify({ error: 'cors_denied' }),
+        {
+          status: 403,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
+    }
+
+    const headers = new Headers();
+    const allowOrigin = this.getCorsAllowOriginHeader(origin);
+    if (allowOrigin) {
+      headers.set('Access-Control-Allow-Origin', allowOrigin);
+    }
+    
+    headers.set('Access-Control-Allow-Methods', this.config.corsAllowMethods.join(', '));
+    
+    // Use request headers if present, otherwise use configured default
+    const requestHeaders = request.headers.get('Access-Control-Request-Headers');
+    const allowHeaders = requestHeaders || this.config.corsAllowHeaders.join(', ');
+    headers.set('Access-Control-Allow-Headers', allowHeaders);
+    
+    headers.set('Access-Control-Max-Age', this.config.corsMaxAgeSec.toString());
+    
+    if (this.config.corsAllowCredentials) {
+      headers.set('Access-Control-Allow-Credentials', 'true');
+    }
+
+    return new Response(null, { status: 204, headers });
+  }
+
+  private addCorsHeaders(response: Response, requestOrigin: string): void {
+    if (!this.config.corsEnabled) return;
+    
+    if (!this.isOriginAllowed(requestOrigin)) return;
+
+    const allowOrigin = this.getCorsAllowOriginHeader(requestOrigin);
+    if (allowOrigin) {
+      response.headers.set('Access-Control-Allow-Origin', allowOrigin);
+    }
+
+    if (this.config.corsAllowCredentials) {
+      response.headers.set('Access-Control-Allow-Credentials', 'true');
+    }
+
+    if (this.config.corsExposeHeaders && this.config.corsExposeHeaders.length > 0) {
+      response.headers.set('Access-Control-Expose-Headers', this.config.corsExposeHeaders.join(', '));
+    }
   }
 
   private shuffleArray<T>(array: T[]): T[] {
@@ -109,7 +250,7 @@ class LoadBalancer {
     }
   }
 
-  private buildDiagnosticResponse(): Response {
+  private buildDiagnosticResponse(requestOrigin?: string): Response {
     const diagnostics = {
       service: 'Simple Load Balancer (SLB)',
       version: '1.0.0-mvp',
@@ -119,21 +260,41 @@ class LoadBalancer {
         originTimeoutMs: this.config.originTimeoutMs,
         retries: this.config.retries,
         failStatuses: Array.from(this.config.failStatuses).sort(),
-        diagPath: this.config.diagPath
+        diagPath: this.config.diagPath,
+        corsEnabled: this.config.corsEnabled,
+        corsAllowOrigins: this.config.corsAllowOrigins,
+        corsAllowMethods: this.config.corsAllowMethods,
+        corsAllowHeaders: this.config.corsAllowHeaders,
+        corsExposeHeaders: this.config.corsExposeHeaders,
+        corsAllowCredentials: this.config.corsAllowCredentials,
+        corsMaxAgeSec: this.config.corsMaxAgeSec
       }
     };
 
-    return new Response(JSON.stringify(diagnostics, null, 2), {
+    const response = new Response(JSON.stringify(diagnostics, null, 2), {
       status: 200,
       headers: { 'Content-Type': 'application/json' }
     });
+
+    // Add CORS headers to diagnostic response if origin provided
+    if (requestOrigin) {
+      this.addCorsHeaders(response, requestOrigin);
+    }
+
+    return response;
   }
 
   async handleRequest(request: Request): Promise<Response> {
     const url = new URL(request.url);
+    const requestOrigin = request.headers.get('Origin') || '';
     
     if (url.pathname === this.config.diagPath) {
-      return this.buildDiagnosticResponse();
+      return this.buildDiagnosticResponse(requestOrigin);
+    }
+
+    // Handle CORS preflight requests
+    if (this.config.corsEnabled && this.isPreflightRequest(request)) {
+      return this.handlePreflightRequest(request);
     }
 
     const shuffledOrigins = this.shuffleArray(this.config.origins);
@@ -148,11 +309,16 @@ class LoadBalancer {
         newHeaders.set('X-LB-Origin', origin);
         newHeaders.set('X-LB-Attempt', (attempt + 1).toString());
         
-        return new Response(response.body, {
+        const newResponse = new Response(response.body, {
           status: response.status,
           statusText: response.statusText,
           headers: newHeaders
         });
+
+        // Add CORS headers if enabled and origin is allowed
+        this.addCorsHeaders(newResponse, requestOrigin);
+        
+        return newResponse;
       }
     }
 
