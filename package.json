@@ -1,7 +1,7 @@
 {
-  "name": "@thaitype/minimal-typescript-node-esm-starter",
-  "version": "0.0.0",
-  "description": "minimal-typescript-node-esm-starter",
+  "name": "@thaitype/slb",
+  "version": "0.1.0",
+  "description": "Simple Load Balancer (SLB) - Cloudflare Worker based load balancer",
   "main": "./dist/main.cjs",
   "module": "./dist/main.js",
   "types": "./dist/main.d.ts",
@@ -14,19 +14,25 @@
   },
   "scripts": {
     "start": "tsx src/main.ts",
-    "dev": "tsx watch src/main.ts",
+    "dev": "wrangler dev",
     "test:coverage": "vitest run --coverage",
     "test": "vitest",
     "test:ci": "vitest run",
     "build": "tsup src/main.ts --dts --format esm,cjs",
-    "format": "prettier -w src",
-    "lint": "tsc --noEmit && eslint ./src && prettier -c src",
-    "lint:fix": "eslint --fix ./src && prettier -w src"
+    "format": "prettier -w src test",
+    "lint": "tsc --noEmit && eslint ./src ./test && prettier -c src test",
+    "lint:fix": "eslint --fix ./src ./test && prettier -w src test",
+    "mock:servers": "tsx test/run-mock-servers.ts",
+    "wrangler:dev": "wrangler dev",
+    "wrangler:deploy": "wrangler deploy",
+    "e2e:test": "concurrently \"pnpm mock:servers\" \"sleep 2 && pnpm wrangler:dev\" --kill-others-on-fail"
   },
   "devDependencies": {
     "@eslint/js": "^9.23.0",
+    "@types/node": "^24.2.1",
     "@typescript-eslint/eslint-plugin": "^8.27.0",
     "@vitest/coverage-v8": "^3.0.9",
+    "concurrently": "^9.1.0",
     "eslint": "^9.23.0",
     "eslint-config-prettier": "^10.1.1",
     "eslint-plugin-only-warn": "^1.1.0",
@@ -35,7 +41,8 @@
     "tsx": "^4.19.3",
     "typescript": "^5.8.2",
     "typescript-eslint": "^8.27.0",
-    "vitest": "^3.0.9"
+    "vitest": "^3.0.9",
+    "wrangler": "^4.28.0"
   },
   "keywords": [],
   "author": "Thada Wangthammang",
